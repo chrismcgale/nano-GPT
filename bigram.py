@@ -11,7 +11,7 @@ eval_iter = 500
 learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32
+n_embd = 32
 #----------------
 
 torch.manual_seed(1337)
@@ -64,9 +64,9 @@ class Head(nn.Module):
     
     def __init__(self, head_size):
         super().__init__()
-        self.key = nn.Linear(n_embed, head_size, bias=False)
-        self.query = nn.Linear(n_embed, head_size, bias=False)
-        self.value = nn.Linear(n_embed, head_size, bias=False)
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+        self.value = nn.Linear(n_embd, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         
         
@@ -82,22 +82,50 @@ class Head(nn.Module):
         v = self.value(x)
         out = wei @ v # (B, T, T) @ (B, T, C) --> (B, T, C)
         return out
+    
+    
+class MultiHeadAttention(nn.Module):
+    """ multiple heads of self-attention in parallel """
+    
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        
+        
+    def forward(self, x):
+        return torch.cat([h(x) for h in self.heads], dim=-1)
+    
+    
+class FeedFoward(nn.Module):
+    """ a simple linear layer followed by a non-linearity """
+    
+    def __init__(self, n_embd):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, n_embd),
+            nn.ReLU(),
+        )
+        
+    def forward(self, x):
+        return self.net(x)
 
 class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
-        self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = Head(n_embed)
-        self.lm_head = nn.Linear(n_embed, vocab_size)
+        self.token_embdding_table = nn.Embedding(vocab_size, n_embd)
+        self.position_embdding_table = nn.Embedding(block_size, n_embd)
+        self.sa_heads = MultiHeadAttention(4, n_embd // 4)
+        self.ffwd = FeedFoward(n_embd)
+        self.lm_head = nn.Linear(n_embd, vocab_size)
         
     def forward(self, idx, targets=None):
         B,T = idx.shape
         # idx and targets are both (B,T) tensor of integers
-        tok_emb = self.token_embedding_table(idx) # (Batch, Time, Channel)
-        pos_emb = self.position_embedding_table(torch.arange(T, device=device)) # (T, C)
+        tok_emb = self.token_embdding_table(idx) # (Batch, Time, Channel)
+        pos_emb = self.position_embdding_table(torch.arange(T, device=device)) # (T, C)
         x = tok_emb + pos_emb # (B, T, C)
-        x = self.sa_head(x)
+        x = self.sa_heads(x)
+        x = self.ffwd(x)
         logits = self.lm_head(x) # (B,T,vocab_size)
         
         if targets == None:
