@@ -195,6 +195,7 @@ class BatchNorm1d:
         self.eps = eps
         self.gamma = torch.ones(dim)
         self.beta = torch.zeros(dim)
+        self.momentum = momentum
     
     def __call__(self, x):
         xmean = x.mean(1, keepdim=True)
